@@ -20,8 +20,8 @@ use windows::Win32::System::Com::{
     CLSCTX_INPROC_SERVER, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx, CoUninitialize,
 };
 use windows::Win32::UI::Accessibility::{
-    CUIAutomation, CUIAutomation8, IUIAutomation, IUIAutomation2, IUIAutomationElement,
-    IUIAutomationTextPattern, IUIAutomationValuePattern, UIA_TextPatternId, UIA_ValuePatternId,
+    CUIAutomation8, IUIAutomation, IUIAutomation2, IUIAutomationElement, IUIAutomationTextPattern,
+    IUIAutomationValuePattern, UIA_TextPatternId, UIA_ValuePatternId,
 };
 use windows::core::Interface;
 use windows_sys::Win32::System::Threading::GetCurrentProcessId;
@@ -192,19 +192,18 @@ fn is_password(element: &IUIAutomationElement) -> bool {
 }
 
 /// This thread's UI Automation instance with bounded calls: the Windows 8
-/// object when there is one, whose timeouts are set, else the original.
+/// object (every Windows Hex supports has it) with both timeouts set. `None`
+/// when it can't be made or either timeout can't be set, so no watch ever
+/// waits on an app for UI Automation's 20 s default.
 fn automation() -> Option<IUIAutomation> {
     // SAFETY: COM is entered on this thread by the caller; the instance is
     // created and used on it.
     unsafe {
-        if let Ok(automation) =
-            CoCreateInstance::<_, IUIAutomation2>(&CUIAutomation8, None, CLSCTX_INPROC_SERVER)
-        {
-            let _ = automation.SetConnectionTimeout(CALL_TIMEOUT_MS);
-            let _ = automation.SetTransactionTimeout(CALL_TIMEOUT_MS);
-            return automation.cast::<IUIAutomation>().ok();
-        }
-        CoCreateInstance(&CUIAutomation, None, CLSCTX_INPROC_SERVER).ok()
+        let automation: IUIAutomation2 =
+            CoCreateInstance(&CUIAutomation8, None, CLSCTX_INPROC_SERVER).ok()?;
+        automation.SetConnectionTimeout(CALL_TIMEOUT_MS).ok()?;
+        automation.SetTransactionTimeout(CALL_TIMEOUT_MS).ok()?;
+        automation.cast::<IUIAutomation>().ok()
     }
 }
 

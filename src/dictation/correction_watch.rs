@@ -64,6 +64,14 @@ impl Stop {
     }
 }
 
+/// Whether a watch that ended for `stop` still saves what it learned, with
+/// the lab `on` as the watch ends. A lab turned off learns nothing, even when
+/// the watch ended for another reason first.
+#[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
+fn learns(stop: Stop, on: bool) -> bool {
+    on && stop.learns()
+}
+
 /// Why a tick ends the watch before its field is read, checked in this
 /// order: the lab (off learns nothing, so it wins every later reason), a
 /// newer paste, then the deadline.
@@ -257,7 +265,9 @@ fn tick(focus: &Focus, generation: u64, started: std::time::Instant) -> Result<S
 /// terms were added.
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 fn finish(stop: Stop, baseline: &str, inserted: &str, latest: &str) -> usize {
-    if !stop.learns() {
+    // Read again here: the lab may turn off while the last tick waited on the
+    // app, and that tick then ends for another reason.
+    if !learns(stop, crate::labs::learn_from_corrections()) {
         return 0;
     }
     let terms = crate::dictation::correction_terms::learned_terms(
@@ -350,6 +360,17 @@ mod tests {
         for stop in [Stop::Superseded, Stop::Timeout, Stop::Focus, Stop::Empty] {
             assert!(stop.learns());
         }
+    }
+
+    #[test]
+    fn a_lab_turned_off_while_the_last_tick_waited_learns_nothing() {
+        // The tick saw the lab on, then waited on the app and ended on focus;
+        // the lab turned off meanwhile.
+        for stop in [Stop::Superseded, Stop::Timeout, Stop::Focus, Stop::Empty] {
+            assert!(learns(stop, true));
+            assert!(!learns(stop, false));
+        }
+        assert!(!learns(Stop::Off, true));
     }
 
     #[test]
