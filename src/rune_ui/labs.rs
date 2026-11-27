@@ -737,7 +737,13 @@ fn rows(ui: &Ui) -> Vec<Row> {
     // becomes real.
     if caps.os == super::platform::Os::Macos {
         rows.push(row(Feature::ScreenVocabulary, Some(&BOOK)));
-        // macOS reads back the field a dictation pasted into.
+    }
+    // macOS (Accessibility) and Windows (UI Automation) read back the field
+    // a dictation pasted into.
+    if matches!(
+        caps.os,
+        super::platform::Os::Macos | super::platform::Os::Windows
+    ) {
         rows.push(row(Feature::LearnFromCorrections, Some(&BOOK)));
     }
     if caps.keyboard_model_switching {

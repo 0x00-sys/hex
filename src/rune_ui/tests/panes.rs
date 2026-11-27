@@ -2633,8 +2633,8 @@ fn labs_lists_every_toggle_off_by_default() {
     assert!(rt.find("lab-return-to-app").is_none(), "macOS only");
     assert!(rt.find("lab-screen-vocabulary").is_none(), "macOS only");
     assert!(
-        rt.find("lab-learn-from-corrections").is_none(),
-        "macOS only"
+        rt.find("lab-learn-from-corrections").is_some(),
+        "Windows reads the pasted field through UI Automation"
     );
     assert!(rt.find("lab-cursor-context").is_none(), "macOS only");
     assert!(
@@ -2662,6 +2662,10 @@ fn labs_lists_every_toggle_off_by_default() {
     assert!(
         rt.find("lab-cursor-context").is_none(),
         "cursor context is macOS only"
+    );
+    assert!(
+        rt.find("lab-learn-from-corrections").is_none(),
+        "Linux has no correction watch yet"
     );
 }
 

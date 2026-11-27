@@ -24,8 +24,29 @@ use macos::{
 };
 #[cfg(target_os = "macos")]
 pub use macos::{PasteMode, Paster};
-#[cfg(target_os = "macos")]
-pub(crate) use macos::{note_paste, paste_generation};
+
+/// Every paste into another app since this process started, bumped before
+/// the app is touched. A watch that outlives its paste compares it to tell a
+/// reading taken before a newer paste from one a newer paste may have
+/// replaced. Not gated by any lab: it only orders pastes.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+static PASTE_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// The newest paste's generation, read after a paste and again after every
+/// read of a watched field.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+pub(crate) fn paste_generation() -> u64 {
+    PASTE_GENERATION.load(std::sync::atomic::Ordering::Acquire)
+}
+
+/// Marks a paste into another app: every paster calls it before its paste
+/// reaches the app, and macOS captures call it for the pastes that go around
+/// the paster (a capture's sheet and summary), so a running watch knows the
+/// field may have changed under it.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+pub(crate) fn note_paste() {
+    PASTE_GENERATION.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+}
 
 /// Whether a paste must be refused because macOS 27.3 split posting key events
 /// out of Accessibility and this process has not been granted it. Below 27.3

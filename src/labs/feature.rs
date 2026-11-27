@@ -151,7 +151,7 @@ define_features! {
     LiveTyping => labs(live_typing), "live-typing", Dictation, Everyone, LINUX, 20261107;
     LiveChapters => labs(live_chapters), "live-chapters", Meetings, Everyone, EVERY, 20261030;
     ScreenVocabulary => labs(screen_vocabulary), "screen-vocabulary", Dictation, Everyone, MACOS, 20261112;
-    LearnFromCorrections => labs(learn_from_corrections), "learn-from-corrections", Dictation, Everyone, MACOS, 20261121;
+    LearnFromCorrections => labs(learn_from_corrections), "learn-from-corrections", Dictation, Everyone, MACOS_WINDOWS, 20261121;
     TerminalPaste => app(paste_with_shift), "terminal-paste", Output, Everyone, WINDOWS, 20261030;
     KeyboardModelSwitching => app(keyboard_model_switching.enabled), "keyboard-model-switching", Models, Everyone, EVERY, 20261030;
     ModelSwitchShortcut => labs(model_switch_shortcut), "model-switch-shortcut", Models, Everyone, EVERY, 20261124;

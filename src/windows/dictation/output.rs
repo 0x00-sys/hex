@@ -46,20 +46,25 @@ impl OutputAdapter for WindowsOutputAdapter<'_> {
                 let pasted = paster
                     .paste(text, self.terminal_paste, self.return_to, standalone)
                     .map_err(|error| format!("{error:#}"))?;
-                if pasted == Paste::Sent && send {
+                let Paste::Sent(inserted) = pasted else {
+                    return Ok(InsertResult {
+                        sent: false,
+                        copied: true,
+                    });
+                };
+                let sent = send;
+                if sent {
                     paster
                         .press_return()
                         .map_err(|error| format!("{error:#}"))?;
-                    Ok(InsertResult {
-                        sent: true,
-                        copied: false,
-                    })
-                } else {
-                    Ok(InsertResult {
-                        sent: false,
-                        copied: pasted == Paste::Copied,
-                    })
                 }
+                // Labs › Learn from corrections: only a paste left in its
+                // field, never a send, is watched.
+                crate::dictation::correction_watch::watch_paste(&inserted, true, false, sent);
+                Ok(InsertResult {
+                    sent,
+                    copied: false,
+                })
             }
         }
     }

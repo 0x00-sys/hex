@@ -6,20 +6,39 @@
 //! This module owns when the watch reads, when it stops, and how what it
 //! learns reaches Vocabulary. It never logs a field's text or a learned
 //! term: its one event says how many terms were learned. Nothing leaves the
-//! Mac.
+//! computer.
+//!
+//! The field is read through each OS's accessibility API: macOS
+//! Accessibility ([`crate::accessibility::PasteFocus`]) and Windows UI
+//! Automation (`crate::windows::paste_focus`). Linux has no watch yet.
 
 use crate::dictation::vocabulary::{self, VocabularyEntry};
 
-/// How often the watched field is read.
+/// Where a paste landed, taken on the output worker right after the paste
+/// and moved to the watch thread. macOS takes the field itself; Windows takes
+/// the window and its keyboard focus, and the watch thread finds the field
+/// through UI Automation, whose objects stay on the thread that made them.
 #[cfg(target_os = "macos")]
+type Target = crate::accessibility::PasteFocus;
+#[cfg(target_os = "windows")]
+type Target = crate::windows::paste_focus::PasteTarget;
+/// The watched field, as the watch thread reads it.
+#[cfg(target_os = "macos")]
+type Focus = crate::accessibility::PasteFocus;
+#[cfg(target_os = "windows")]
+type Focus = crate::windows::paste_focus::PasteFocus;
+
+/// How often the watched field is read.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 const POLL: std::time::Duration = std::time::Duration::from_millis(100);
 /// How long the app may take to show a paste Hex already posted: ⌘V is
-/// handled after Hex's paste returns, so the first read is retried this long.
-#[cfg(target_os = "macos")]
+/// handled after Hex's paste returns (Ctrl+V on Windows), so the first read
+/// is retried this long.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 const LANDING: std::time::Duration = std::time::Duration::from_secs(1);
 /// How long one watch follows its field. A correction usually lands within
 /// seconds; five minutes keeps a forgotten field from being watched longer.
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 const WATCH: std::time::Duration = std::time::Duration::from_secs(5 * 60);
 
 /// Why a tick ended the watch.
@@ -43,6 +62,14 @@ impl Stop {
     fn learns(self) -> bool {
         !matches!(self, Self::Off)
     }
+}
+
+/// Whether a watch that ended for `stop` still saves what it learned, with
+/// the lab `on` as the watch ends. A lab turned off learns nothing, even when
+/// the watch ended for another reason first.
+#[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
+fn learns(stop: Stop, on: bool) -> bool {
+    on && stop.learns()
 }
 
 /// Why a tick ends the watch before its field is read, checked in this
@@ -74,7 +101,7 @@ fn reading(current: bool, text: Option<String>) -> Result<String, Stop> {
 
 /// Whether a finished output leaves a field to watch: it pasted into one
 /// (`pasted`), never copied instead, and never sent it away.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[cfg_attr(not(any(target_os = "macos", target_os = "windows")), allow(dead_code))]
 fn watches(pasted: bool, copied: bool, sent: bool) -> bool {
     pasted && !copied && !sent
 }
@@ -98,53 +125,60 @@ fn with_terms(
 }
 
 /// Starts a watch when a finished output really pasted `inserted` into a
-/// field: not a copy, not a YOLO send, and only while Labs › Learn from
-/// corrections is on. Runs on the ordered output worker, so the field is the
-/// one the paste just reached; the watch thread only reads it.
-#[cfg(target_os = "macos")]
-pub(crate) fn watch_paste(
-    inserted: &str,
-    target: crate::parakeet::TranscriptionTarget,
-    mode: crate::paste::PasteMode,
-    sent: bool,
-) {
-    let pasted = matches!(
-        target,
-        crate::parakeet::TranscriptionTarget::Paste
-            | crate::parakeet::TranscriptionTarget::RawPaste
-    );
-    if !watches(
-        pasted,
-        matches!(mode, crate::paste::PasteMode::CopyOnly),
-        sent,
-    ) || !crate::labs::learn_from_corrections()
-    {
+/// field (`pasted`): not a copy, not a YOLO send, and only while Labs ›
+/// Learn from corrections is on. Runs on the ordered output worker, so the
+/// field is the one the paste just reached; the watch thread only reads it.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+pub(crate) fn watch_paste(inserted: &str, pasted: bool, copied: bool, sent: bool) {
+    if !watches(pasted, copied, sent) || !crate::labs::learn_from_corrections() {
         return;
     }
     // Before the field is captured: a newer paste landing between the two
     // must look newer to this watch, never become the paste it believes it
     // belongs to.
     let generation = crate::paste::paste_generation();
-    let Some(focus) = crate::dictation::context::frontmost_pid()
-        .and_then(crate::accessibility::PasteFocus::capture)
-    else {
+    let Some(target) = capture() else {
         return;
     };
-    watch(focus, inserted.to_owned(), generation);
+    watch(target, inserted.to_owned(), generation);
+}
+
+/// The field the paste just reached, in the app in front.
+#[cfg(target_os = "macos")]
+fn capture() -> Option<Target> {
+    crate::dictation::context::frontmost_pid().and_then(crate::accessibility::PasteFocus::capture)
+}
+
+#[cfg(target_os = "windows")]
+fn capture() -> Option<Target> {
+    crate::windows::paste_focus::PasteTarget::capture()
+}
+
+/// The watched field on the watch thread: macOS already holds it.
+#[cfg(target_os = "macos")]
+fn open(target: Target) -> Option<Focus> {
+    Some(target)
+}
+
+/// The watched field on the watch thread: Windows finds it through UI
+/// Automation, only while the paste's window and keyboard focus still hold.
+#[cfg(target_os = "windows")]
+fn open(target: Target) -> Option<Focus> {
+    crate::windows::paste_focus::PasteFocus::open(target)
 }
 
 /// Starts the one watch that follows the field a dictation pasted `inserted`
 /// into. Its focus is captured before this thread exists, and a later paste
 /// supersedes it through the paste generation.
-#[cfg(target_os = "macos")]
-fn watch(focus: crate::accessibility::PasteFocus, inserted: String, generation: u64) {
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn watch(target: Target, inserted: String, generation: u64) {
     let inserted = inserted.trim().to_owned();
     if inserted.is_empty() {
         return;
     }
     let spawned = std::thread::Builder::new()
         .name("correction-watch".into())
-        .spawn(move || follow(focus, inserted, generation));
+        .spawn(move || follow(target, inserted, generation));
     if let Err(error) = spawned {
         tracing::warn!(%error, "could not start the correction watch");
     }
@@ -152,8 +186,11 @@ fn watch(focus: crate::accessibility::PasteFocus, inserted: String, generation: 
 
 /// Reads the field back every [`POLL`] until it ends the watch, then
 /// compares the last text read with the baseline it started from.
-#[cfg(target_os = "macos")]
-fn follow(focus: crate::accessibility::PasteFocus, inserted: String, generation: u64) {
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn follow(target: Target, inserted: String, generation: u64) {
+    let Some(focus) = open(target) else {
+        return;
+    };
     let Some(baseline) = landed(&focus, &inserted, generation) else {
         return;
     };
@@ -178,12 +215,8 @@ fn follow(focus: crate::accessibility::PasteFocus, inserted: String, generation:
 /// when the lab turns off, a newer paste starts, the focus moves, the read
 /// outlives its generation, or the paste never lands: a paste no watch can
 /// see teaches nothing.
-#[cfg(target_os = "macos")]
-fn landed(
-    focus: &crate::accessibility::PasteFocus,
-    inserted: &str,
-    generation: u64,
-) -> Option<String> {
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn landed(focus: &Focus, inserted: &str, generation: u64) -> Option<String> {
     let deadline = std::time::Instant::now() + LANDING;
     loop {
         if !crate::labs::learn_from_corrections() || crate::paste::paste_generation() != generation
@@ -212,12 +245,8 @@ fn landed(
 /// One tick's reading of the watched field: the text to remember, or the
 /// reason the watch ended. The cheap checks run first, so a tick that stops
 /// for them never reads the field.
-#[cfg(target_os = "macos")]
-fn tick(
-    focus: &crate::accessibility::PasteFocus,
-    generation: u64,
-    started: std::time::Instant,
-) -> Result<String, Stop> {
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn tick(focus: &Focus, generation: u64, started: std::time::Instant) -> Result<String, Stop> {
     if let Some(stop) = ending(
         crate::paste::paste_generation() == generation,
         crate::labs::learn_from_corrections(),
@@ -234,9 +263,11 @@ fn tick(
 
 /// Learns from the field's final text and saves the terms. Returns how many
 /// terms were added.
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn finish(stop: Stop, baseline: &str, inserted: &str, latest: &str) -> usize {
-    if !stop.learns() {
+    // Read again here: the lab may turn off while the last tick waited on the
+    // app, and that tick then ends for another reason.
+    if !learns(stop, crate::labs::learn_from_corrections()) {
         return 0;
     }
     let terms = crate::dictation::correction_terms::learned_terms(
@@ -256,7 +287,7 @@ fn finish(stop: Stop, baseline: &str, inserted: &str, latest: &str) -> usize {
 /// list in one update, which also applies it to this process. The open
 /// window adopts the save through the runtime's own settings reload. Returns
 /// how many terms were added.
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn save(terms: &[String]) -> usize {
     let mut settings = match crate::app_settings::AppSettings::load() {
         Ok(settings) => settings,
@@ -275,8 +306,13 @@ fn save(terms: &[String]) -> usize {
         tracing::warn!(%error, "could not save the learned vocabulary");
         return 0;
     }
+    #[cfg(target_os = "macos")]
     if let Some(runtime) = crate::macos_rune::runtime() {
         let _ = runtime.send(crate::macos_rune::Request::ReloadSettings);
+    }
+    #[cfg(target_os = "windows")]
+    if let Some(runtime) = crate::windows::rune::runtime() {
+        let _ = runtime.send(crate::windows::rune::Request::ReloadSettings);
     }
     added.len()
 }
@@ -324,6 +360,17 @@ mod tests {
         for stop in [Stop::Superseded, Stop::Timeout, Stop::Focus, Stop::Empty] {
             assert!(stop.learns());
         }
+    }
+
+    #[test]
+    fn a_lab_turned_off_while_the_last_tick_waited_learns_nothing() {
+        // The tick saw the lab on, then waited on the app and ended on focus;
+        // the lab turned off meanwhile.
+        for stop in [Stop::Superseded, Stop::Timeout, Stop::Focus, Stop::Empty] {
+            assert!(learns(stop, true));
+            assert!(!learns(stop, false));
+        }
+        assert!(!learns(Stop::Off, true));
     }
 
     #[test]

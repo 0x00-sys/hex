@@ -60,10 +60,12 @@ fn shift_paste(for_this_capture: bool, terminal_paste: bool) -> bool {
 }
 
 /// What a paste did with the text.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Paste {
-    /// The chord was sent to the window in front.
-    Sent,
+    /// The chord was sent to the window in front, carrying exactly this
+    /// text: the transcript with the continuation's join, which Labs › Learn
+    /// from corrections looks for in the field.
+    Sent(String),
     /// Nothing was sent: the text stayed on the clipboard, because the window
     /// in front was the shell or Labs › Copy dictation only is on.
     Copied,
@@ -359,6 +361,9 @@ impl WindowsPaster {
             target.application.as_deref(),
             shift_paste(shift, self.paste_with_shift.load(Ordering::Relaxed)),
         );
+        // Before anything reaches the app: a correction watch still reading
+        // another field may only learn from text taken before this paste.
+        crate::paste::note_paste();
         if let Err(error) = send_paste_shortcut(shift) {
             if let Some(generation) = generation {
                 restore_clipboard_generation(&self.clipboard_restore, generation);
@@ -367,9 +372,10 @@ impl WindowsPaster {
         }
         // Only a paste that reached the app is continued by the next one, and
         // a standalone paste ends the continuation instead.
-        self.continuation.record(revision, !standalone, text);
+        self.continuation
+            .record(revision, !standalone, text.clone());
         let Some(generation) = generation else {
-            return Ok(Paste::Sent);
+            return Ok(Paste::Sent(text));
         };
         let clipboard_restore = self.clipboard_restore.clone();
         let restore_delay = if remote_desktop {
@@ -381,7 +387,7 @@ impl WindowsPaster {
             thread::sleep(restore_delay);
             restore_clipboard_generation(&clipboard_restore, generation);
         });
-        Ok(Paste::Sent)
+        Ok(Paste::Sent(text))
     }
 
     /// Labs › YOLO mode: one press of Return after a paste, once

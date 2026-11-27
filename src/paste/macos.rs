@@ -3,7 +3,6 @@ use std::fs;
 use std::ops::RangeInclusive;
 use std::path::Path;
 use std::ptr;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -18,29 +17,11 @@ use objc2_foundation::{NSArray, NSData, NSString};
 use super::clipboard_restore::{
     CLIPBOARD_RESTORE_DELAY, ClipboardRestore as SharedClipboardRestore, RestoreDecision,
 };
+use super::note_paste;
 #[cfg(hex_capture)]
 use super::recent;
 use crate::continuation::{Continuation, InputActivity};
 use crate::keyboard;
-
-/// Every paste into another app since this process started, bumped before
-/// the app is touched. A watch that outlives its paste compares it to tell a
-/// reading taken before a newer paste from one a newer paste may have
-/// replaced. Not gated by any lab: it only orders pastes.
-static PASTE_GENERATION: AtomicU64 = AtomicU64::new(0);
-
-/// The newest paste's generation, read after a paste and again after every
-/// read of a watched field.
-pub(crate) fn paste_generation() -> u64 {
-    PASTE_GENERATION.load(Ordering::Acquire)
-}
-
-/// Marks a paste into another app that goes around [`Paster::insert_text`]
-/// (a capture's sheet and summary), so a running watch knows the field may
-/// have changed under it.
-pub(crate) fn note_paste() {
-    PASTE_GENERATION.fetch_add(1, Ordering::AcqRel);
-}
 
 pub struct Paster {
     #[cfg_attr(not(hex_capture), allow(dead_code))]
