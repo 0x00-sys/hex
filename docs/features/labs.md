@@ -74,7 +74,7 @@ Feature             Pane  Toggle (settings.json, hex settings)   On: what it doe
 ├── Appearance      no    labs.appearance + labs.appearance_theme (system/light/dark, default system)  the main window is forced light or dark instead of following the system; the dictation HUD (including its onboarding and Sounds previews) and meeting recording pill remain dark. Other overlays follow the OS. On Windows the title bar follows too, through its background and light/dark mode; Windows 10 has no caption colour, so DWM keeps its own light or dark caption background (builds before 19041 keep the OS caption) while its text and buttons follow
 ├── Live chapters   no    labs.live_chapters                     chapters a meeting while it records, boundary pass after Stop
 ├── Words on screen no labs.screen_vocabulary         (macOS)   names and terms in the focused window become temporary vocabulary for each dictation; read locally through Accessibility, never saved, password fields skipped
-├── Learn from corrections no labs.learn_from_corrections (macOS) after a dictation is pasted, watch only that field for up to 5 minutes and add up to 5 names you corrected to Vocabulary; password fields, long text, and rewrites are skipped, and nothing leaves the Mac
+├── Learn from corrections no labs.learn_from_corrections (macOS, Windows) after a dictation is pasted, watch only that field for up to 5 minutes and add up to 5 names you corrected to Vocabulary; read through Accessibility on macOS and UI Automation on Windows; password fields, long text, and rewrites are skipped, and nothing leaves the computer
 ├── Rewrite reads nearby text no labs.cursor_context (macOS) the mode's OpenCode rewrite reads the focused text element's text around the caret as context for names, terms, and where the result lands; password fields skipped
 ├── Switch model with keyboard language  no  keyboard_model_switching.enabled  (macOS, Windows, X11)
 │                                        the input source picks its mapped model (#216); General shows the mappings while on
@@ -630,10 +630,13 @@ stoplist and log levels, hashes, ordinals, times, units, random tokens, the
 [accessibility.rs](../../src/accessibility.rs). Not observed: a real Mac
 reading a real window, or a dictated word corrected by what was on screen.
 
-Learn from corrections (`learn-from-corrections`, macOS): while on, after a
-dictation is pasted, Hex watches only the field it pasted into, reading it
-about every 100 ms for up to 5 minutes. The first read retries for up to a
-second until the app shows the pasted text, since the app handles ⌘V after
+Learn from corrections (`learn-from-corrections`, macOS and Windows): while
+on, after a dictation is pasted, Hex watches only the field it pasted into,
+reading it about every 100 ms for up to 5 minutes, through Accessibility on
+macOS and UI Automation on Windows (a window running as administrator can't
+be read, and takes no paste from Hex either). The first read retries for up
+to a second until the app shows the pasted text, since the app handles ⌘V
+(Ctrl+V) after
 Hex's paste returns. What it compares is what Hex actually inserted (the
 continuation join's capitalization and leading space, or smart spacing,
 included), never the transcript. It stops on a focus change, an empty or
@@ -657,9 +660,13 @@ reads. Each learned term is saved the way `hex vocabulary add` saves one
 (`vocabulary::add` on the saved list, then one `AppSettings::update` that
 writes `settings.json` and applies the list to the running app), and an open
 window adopts it. The one event it logs holds the number of terms only, never
-the field or a term. Nothing leaves the Mac. Checks:
-`learn_from_corrections_is_its_own_switch_and_macos_only` in
-[labs.rs](../../src/labs.rs), `a_tick_stops_in_the_order_the_watch_reads`,
+the field or a term. Nothing leaves the computer. Linux has no watch yet,
+so the lab isn't listed there. Checks: `labs_lists_every_toggle_off_by_default`
+in [rune_ui/tests/panes.rs](../../src/rune_ui/tests/panes.rs) (listed on
+macOS and Windows, not Linux), `a_field_past_the_limit_is_skipped_not_cut`
+and `the_target_is_the_window_its_process_and_its_focus` in
+[windows/paste_focus.rs](../../src/windows/paste_focus.rs) (run by Windows
+CI), `a_tick_stops_in_the_order_the_watch_reads`,
 `a_reading_a_newer_paste_overtook_is_discarded`,
 `only_the_lab_turning_off_discards_a_correction`,
 `only_a_paste_the_person_can_still_fix_is_watched`,
@@ -673,7 +680,9 @@ the field or a term. Nothing leaves the Mac. Checks:
 `a_name_with_an_apostrophe_is_learned`, `a_line_break_starts_a_sentence`,
 `a_colon_starts_a_sentence`, and
 `a_closing_quote_after_a_period_still_starts_a_sentence`. Not observed: a
-real Mac reading a real field through a correction.
+real Mac or Windows PC reading a real field through a correction (Windows is
+type-checked by cross-compiling only; Electron apps such as Discord are the
+first to try there).
 
 Rewrite reads nearby text (`cursor-context`, macOS): while on,
 each dictation reads the focused text element once, on a background thread, at

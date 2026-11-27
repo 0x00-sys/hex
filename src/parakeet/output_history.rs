@@ -111,7 +111,16 @@ impl<F: FnMut(&str, PasteMode) -> Result<String>> OutputAdapter for MacOutputAda
             false
         };
         #[cfg(target_os = "macos")]
-        correction_watch::watch_paste(&pasted, self.target, mode, sent);
+        correction_watch::watch_paste(
+            &pasted,
+            matches!(
+                self.target,
+                crate::parakeet::TranscriptionTarget::Paste
+                    | crate::parakeet::TranscriptionTarget::RawPaste
+            ),
+            matches!(mode, PasteMode::CopyOnly),
+            sent,
+        );
         Ok(InsertResult {
             sent,
             copied: matches!(mode, PasteMode::CopyOnly),

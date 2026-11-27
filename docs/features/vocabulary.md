@@ -182,7 +182,7 @@ Words on screen (Labs › Words on screen, macOS)  // vocabulary.screen
     // one_screen_read_runs_at_a_time in screen_vocabulary.rs; not observed on
     // a real Mac
 
-Learn from corrections (Labs › Learn from corrections, macOS)  // vocabulary.learn
+Learn from corrections (Labs › Learn from corrections, macOS and Windows)  // vocabulary.learn
 ├── Off by default; after a dictation is pasted, Hex watches only the field it
 │   pasted into, reading it about every 100 ms for up to 5 minutes
 ├── The first read retries for up to a second until the app shows the paste;
@@ -199,12 +199,27 @@ Learn from corrections (Labs › Learn from corrections, macOS)  // vocabulary.l
 ├── Password fields, fields over 20,000 characters, text over 400 words,
 │   rewrites (more than 3 inserted words and over 60% changed), plain
 │   lowercase words, and terms already in Vocabulary are skipped
+├── macOS reads the field through Accessibility; Windows through UI
+│   Automation (windows/paste_focus.rs): right after the Ctrl+V the output
+│   worker notes the window in front, its process, and its focused child
+│   window, and the watch thread takes the UI Automation focused element as
+│   the field only while those still hold and the element is that process's.
+│   A focus change is the window, its focused child, or the focused element
+│   changing. It reads the text pattern (asked for at most 20,001 units) or
+│   else the value pattern; each call is bounded to 1 s by UI Automation's
+│   timeouts. Windows asks for no permission, but refuses the read for a
+│   window running as administrator (which takes no paste from Hex either),
+│   and an app that exposes no text or value pattern teaches nothing
+├── Linux has no watch yet: the lab isn't listed there
 ├── A learned term is saved like `hex vocabulary add` (vocabulary.add on the
 │   saved list, then one settings update that applies it, and an open window
 │   adopts it; vocabulary.cli)
-└── Nothing leaves the Mac; the one logged event holds the term count only
-    // checks: learn_from_corrections_is_its_own_switch_and_macos_only in
-    // labs.rs; a_tick_stops_in_the_order_the_watch_reads,
+└── Nothing leaves the computer; the one logged event holds the term count only
+    // checks: labs_lists_every_toggle_off_by_default in
+    // rune_ui/tests/panes.rs (listed on macOS and Windows, not Linux);
+    // a_field_past_the_limit_is_skipped_not_cut and
+    // the_target_is_the_window_its_process_and_its_focus in
+    // windows/paste_focus.rs (Windows CI); a_tick_stops_in_the_order_the_watch_reads,
     // a_reading_a_newer_paste_overtook_is_discarded,
     // only_the_lab_turning_off_discards_a_correction,
     // only_a_paste_the_person_can_still_fix_is_watched,
@@ -216,7 +231,7 @@ Learn from corrections (Labs › Learn from corrections, macOS)  // vocabulary.l
     // a_name_with_an_apostrophe_is_learned, a_line_break_starts_a_sentence,
     // a_colon_starts_a_sentence, and
     // a_closing_quote_after_a_period_still_starts_a_sentence in
-    // correction_terms.rs; not observed on a real Mac
+    // correction_terms.rs; not observed on a real Mac or Windows PC
 
 Recognition hints, folded in                // vocabulary.hints
 ├── Loading settings.json -> `recognition_hints` of the selected model and the

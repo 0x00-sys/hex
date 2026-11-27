@@ -93,7 +93,8 @@
       "groupTitle": "Dictation",
       "id": "learn-from-corrections",
       "oses": [
-        "macos"
+        "macos",
+        "windows"
       ],
       "summary": "When you fix a name in text Hex just pasted, Hex adds the corrected spelling to Vocabulary. It watches only that field, for up to 5 minutes, and never sends it anywhere.",
       "title": "Learn from corrections"
